@@ -24,7 +24,7 @@ Local-first technical document generator that accepts code files and URLs, then 
 ## Quick start
 
 ```bash
-cd /home/runner/work/DocumentMagician/DocumentMagician
+cd /path/to/DocumentMagician
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -e .

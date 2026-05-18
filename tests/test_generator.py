@@ -1,4 +1,5 @@
 from document_magician.generator import DocumentGenerator
+from document_magician.ingest import SourceDocument
 
 
 class _FakeLLM:
@@ -16,9 +17,7 @@ def test_document_generation_calls_chunk_and_final() -> None:
     llm = _FakeLLM()
     generator = DocumentGenerator(llm=llm)  # type: ignore[arg-type]
     result = generator.build_document(
-        sources=[
-            type("S", (), {"source_type": "file", "source_name": "a.py", "content": "print('x')"})()
-        ],
+        sources=[SourceDocument(source_type="file", source_name="a.py", content="print('x')")],
         title="My Doc",
     )
 
