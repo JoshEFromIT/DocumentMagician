@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import json
 from dataclasses import dataclass
 from html.parser import HTMLParser
@@ -15,6 +16,7 @@ from urllib.request import Request, urlopen
 
 DEFAULT_MODEL = "mistralnemo:docs8k"
 DEFAULT_OLLAMA_HOST = "http://localhost:11434"
+OLLAMA_TIMEOUT_SECONDS = 120
 
 SYSTEM_INSTRUCTIONS = """You are DocumentMagician, an expert technical writer.
 Produce a polished markdown document that mirrors the style, depth, and formatting of the provided example style.
@@ -86,10 +88,24 @@ def read_text_file(path: Path) -> str:
         raise DocumentMagicianError(f"Unable to read file {path}: {exc}") from exc
 
 
-def fetch_url_content(url: str, timeout: int = 20) -> str:
+def _is_private_or_local_host(hostname: str) -> bool:
+    if hostname in {"localhost", "127.0.0.1", "::1"}:
+        return True
+    try:
+        ip = ipaddress.ip_address(hostname)
+        return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+    except ValueError:
+        return False
+
+
+def fetch_url_content(url: str, timeout: int = 20, allow_private_urls: bool = False) -> str:
     parsed_url = urlparse(url)
     if parsed_url.scheme not in {"http", "https"}:
         raise DocumentMagicianError(f"Only HTTP/HTTPS URLs are supported: {url}")
+    if not parsed_url.hostname:
+        raise DocumentMagicianError(f"URL is missing a valid hostname: {url}")
+    if not allow_private_urls and _is_private_or_local_host(parsed_url.hostname):
+        raise DocumentMagicianError(f"Private/local URLs are blocked by default: {url}")
 
     req = Request(url, headers={"User-Agent": "DocumentMagician/1.0"})
     try:
@@ -113,7 +129,9 @@ def truncate_content(text: str, max_chars: int) -> str:
     return text[:max_chars] + "\n...[truncated]"
 
 
-def collect_sources(file_paths: Iterable[str], urls: Iterable[str], max_chars: int = 20000) -> list[Source]:
+def collect_sources(
+    file_paths: Iterable[str], urls: Iterable[str], max_chars: int = 20000, allow_private_urls: bool = False
+) -> list[Source]:
     sources: list[Source] = []
 
     for file_path in file_paths:
@@ -122,7 +140,7 @@ def collect_sources(file_paths: Iterable[str], urls: Iterable[str], max_chars: i
         sources.append(Source(kind="file", label=str(path), content=text))
 
     for url in urls:
-        text = truncate_content(fetch_url_content(url), max_chars)
+        text = truncate_content(fetch_url_content(url, allow_private_urls=allow_private_urls), max_chars)
         sources.append(Source(kind="url", label=url, content=text))
 
     return sources
@@ -162,7 +180,7 @@ def call_ollama(model: str, prompt: str, host: str = DEFAULT_OLLAMA_HOST, num_ct
     req = Request(endpoint, data=data, headers={"Content-Type": "application/json"}, method="POST")
 
     try:
-        with urlopen(req, timeout=120) as response:
+        with urlopen(req, timeout=OLLAMA_TIMEOUT_SECONDS) as response:
             body = response.read().decode("utf-8", errors="replace")
     except (HTTPError, URLError) as exc:
         raise DocumentMagicianError(
@@ -174,7 +192,7 @@ def call_ollama(model: str, prompt: str, host: str = DEFAULT_OLLAMA_HOST, num_ct
         parsed = json.loads(body)
         return parsed["response"].strip()
     except (json.JSONDecodeError, KeyError) as exc:
-        raise DocumentMagicianError(f"Unexpected Ollama response: {body[:200]}") from exc
+        raise DocumentMagicianError("Unexpected Ollama response format.") from exc
 
 
 def parse_args() -> argparse.Namespace:
@@ -189,6 +207,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--title", default="Generated Technical Project Document", help="Document title")
     parser.add_argument("--output", default="generated_document.md", help="Output markdown file path")
     parser.add_argument("--max-chars", type=int, default=20000, help="Maximum characters to keep per input source")
+    parser.add_argument(
+        "--allow-private-urls",
+        action="store_true",
+        help="Allow localhost/private-network URLs (disabled by default for safety).",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -205,7 +228,7 @@ def main() -> int:
         return 2
 
     try:
-        sources = collect_sources(args.files, args.url, max_chars=args.max_chars)
+        sources = collect_sources(args.files, args.url, max_chars=args.max_chars, allow_private_urls=args.allow_private_urls)
         prompt = build_prompt(sources, title=args.title)
 
         if args.dry_run:

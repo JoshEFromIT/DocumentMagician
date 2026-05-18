@@ -41,6 +41,12 @@ python3 document_magician.py \
   --output ./generated_document.md
 ```
 
+If you intentionally need to analyze a localhost/private-network URL, add:
+
+```bash
+--allow-private-urls
+```
+
 Dry run (no model call, writes the generated prompt):
 
 ```bash
@@ -50,6 +56,7 @@ python3 document_magician.py /absolute/path/to/main.py --dry-run --output ./prom
 ## Notes
 
 - Inputs are truncated per source (default `--max-chars 20000`) to keep prompts manageable.
+- Local/private URLs are blocked by default for SSRF safety.
 - If Ollama is unreachable, start it and verify your model is installed:
 
 ```bash
