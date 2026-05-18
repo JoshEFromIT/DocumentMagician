@@ -25,7 +25,7 @@ Generate detailed technical markdown documentation from local code files and URL
 ## Quick start
 
 ```bash
-cd /home/runner/work/DocumentMagician/DocumentMagician
+cd /path/to/DocumentMagician
 python3 document_magician.py --help
 ```
 
@@ -36,6 +36,7 @@ python3 document_magician.py \
   /absolute/path/to/main.py /absolute/path/to/service.ts \
   --url "https://example.com/spec" \
   --model "mistralnemo:docs8k" \
+  --num-ctx 8192 \
   --title "AI Project Documentation" \
   --output ./generated_document.md
 ```

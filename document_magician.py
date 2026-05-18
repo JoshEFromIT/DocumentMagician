@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Iterable
+from urllib.parse import urlparse
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -86,6 +87,10 @@ def read_text_file(path: Path) -> str:
 
 
 def fetch_url_content(url: str, timeout: int = 20) -> str:
+    parsed_url = urlparse(url)
+    if parsed_url.scheme not in {"http", "https"}:
+        raise DocumentMagicianError(f"Only HTTP/HTTPS URLs are supported: {url}")
+
     req = Request(url, headers={"User-Agent": "DocumentMagician/1.0"})
     try:
         with urlopen(req, timeout=timeout) as response:  # nosec B310 - user-supplied URL is intentional feature.
@@ -145,13 +150,13 @@ def build_prompt(sources: list[Source], title: str) -> str:
     )
 
 
-def call_ollama(model: str, prompt: str, host: str = DEFAULT_OLLAMA_HOST) -> str:
+def call_ollama(model: str, prompt: str, host: str = DEFAULT_OLLAMA_HOST, num_ctx: int = 8192) -> str:
     endpoint = host.rstrip("/") + "/api/generate"
     payload = {
         "model": model,
         "prompt": prompt,
         "stream": False,
-        "options": {"num_ctx": 8192},
+        "options": {"num_ctx": num_ctx},
     }
     data = json.dumps(payload).encode("utf-8")
     req = Request(endpoint, data=data, headers={"Content-Type": "application/json"}, method="POST")
@@ -180,6 +185,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--url", action="append", default=[], help="URL(s) to include. Can be used multiple times.")
     parser.add_argument("--model", default=DEFAULT_MODEL, help=f"Local model name (default: {DEFAULT_MODEL})")
     parser.add_argument("--host", default=DEFAULT_OLLAMA_HOST, help=f"Ollama host (default: {DEFAULT_OLLAMA_HOST})")
+    parser.add_argument("--num-ctx", type=int, default=8192, help="Context window to request from Ollama")
     parser.add_argument("--title", default="Generated Technical Project Document", help="Document title")
     parser.add_argument("--output", default="generated_document.md", help="Output markdown file path")
     parser.add_argument("--max-chars", type=int, default=20000, help="Maximum characters to keep per input source")
@@ -205,7 +211,7 @@ def main() -> int:
         if args.dry_run:
             output = prompt
         else:
-            output = call_ollama(args.model, prompt, host=args.host)
+            output = call_ollama(args.model, prompt, host=args.host, num_ctx=args.num_ctx)
 
         output_path = Path(args.output).expanduser().resolve()
         output_path.write_text(output + "\n", encoding="utf-8")

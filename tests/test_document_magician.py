@@ -19,6 +19,15 @@ class DocumentMagicianTests(unittest.TestCase):
             self.assertEqual(sources[0].kind, "file")
             self.assertIn("print('hello')", sources[0].content)
 
+    def test_collect_sources_truncates_file_content(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "long.txt"
+            path.write_text("abcdefghij", encoding="utf-8")
+
+            sources = dm.collect_sources([str(path)], [], max_chars=5)
+
+            self.assertIn("...[truncated]", sources[0].content)
+
     def test_build_prompt_contains_template_and_source(self):
         prompt = dm.build_prompt(
             [dm.Source(kind="file", label="a.py", content="print('x')")],
@@ -44,6 +53,21 @@ class DocumentMagicianTests(unittest.TestCase):
             output = dm.call_ollama("mistralnemo:docs8k", "prompt")
 
         self.assertEqual(output, "# done")
+
+    def test_call_ollama_raises_on_bad_json(self):
+        class _BadResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def read(self):
+                return b"{not-json}"
+
+        with patch("document_magician.urlopen", return_value=_BadResponse()):
+            with self.assertRaises(dm.DocumentMagicianError):
+                dm.call_ollama("mistralnemo:docs8k", "prompt")
 
 
 if __name__ == "__main__":
